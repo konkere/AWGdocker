@@ -7,7 +7,8 @@ FROM runtime AS alpine-sources
 RUN cp /lib/apk/db/installed /tmp/runtime-installed \
  && apk add --no-cache python3 git abuild
 COPY scripts/bundle-alpine-sources.py /tmp/bundle-alpine-sources.py
-RUN python3 /tmp/bundle-alpine-sources.py /tmp/runtime-installed /tmp/alpine-sources \
+RUN DISTFILES_MIRROR="https://distfiles.alpinelinux.org/distfiles/v$(cut -d. -f1,2 /etc/alpine-release)" \
+      python3 /tmp/bundle-alpine-sources.py /tmp/runtime-installed /tmp/alpine-sources \
  && mkdir -p /out \
  && tar -czf /out/alpine-sources.tar.gz -C /tmp alpine-sources
 

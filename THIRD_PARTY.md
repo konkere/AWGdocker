@@ -21,6 +21,8 @@ Official upstream projects:
 The collector fetches those same aports commits from Alpine's official GitHub
 mirror, <https://github.com/alpinelinux/aports>, since the GitLab frontend can
 reject unattended runner requests. The installed package commit remains authoritative.
+Distfiles are fetched first from Alpine's official per-release source cache, then
+from the recipe's original URL if necessary; the original checksums are verified.
 
 The tools GPL text is included at `LICENSES/GPL-2.0-only.txt`. The installed
 `awg-quick` remains GPL-covered as a whole, including our inserted override and
