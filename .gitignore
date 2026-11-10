@@ -1,0 +1,8 @@
+*.conf
+.env*
+private-configs/
+backup-*/
+upstream.json
+__pycache__/
+*.tar
+*.tar.gz

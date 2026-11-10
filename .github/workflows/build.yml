@@ -1,0 +1,175 @@
+name: Build AWG image
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: awg-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      image: ${{ steps.plan.outputs.image }}
+      build: ${{ steps.plan.outputs.build }}
+      go_tag: ${{ steps.plan.outputs.go_tag }}
+      go_commit: ${{ steps.plan.outputs.go_commit }}
+      tools_tag: ${{ steps.plan.outputs.tools_tag }}
+      tools_commit: ${{ steps.plan.outputs.tools_commit }}
+      key: ${{ steps.plan.outputs.key }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - run: python3 scripts/resolve-upstream.py
+      - run: python3 -m unittest discover -s tests -v
+      - name: Registry name
+        run: echo "REGISTRY_IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import hashlib, json, os
+          d=json.load(open("upstream.json"))
+          for component in ("go", "tools"):
+              for field in ("tag", "commit"):
+                  print(f"{component}_{field}={d[component][field]}")
+          key=hashlib.sha256((d["fingerprint"]+os.environ["GITHUB_SHA"]).encode()).hexdigest()[:32]
+          print("key=inputs-"+key)
+          print("release_tag=build-"+os.environ["GITHUB_RUN_ID"]+"-"+os.environ["GITHUB_RUN_ATTEMPT"])
+          PY
+          key=$(python3 - <<'PY'
+          import hashlib, json, os
+          d=json.load(open("upstream.json"))
+          print("inputs-"+hashlib.sha256((d["fingerprint"]+os.environ["GITHUB_SHA"]).encode()).hexdigest()[:32])
+          PY
+          )
+          build=true
+          # Every scheduled run skips inputs that already have a published image.
+          if [[ "$EVENT" == schedule ]]; then
+            if docker buildx imagetools inspect "$REGISTRY_IMAGE:$key" >/dev/null 2>&1; then
+              build=false
+            fi
+          fi
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "image=$REGISTRY_IMAGE" >> "$GITHUB_OUTPUT"
+          publish=false
+          if [[ "$GITHUB_REF" == refs/heads/main && "$EVENT" != pull_request ]]; then
+            publish=true
+          fi
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+          cat upstream.json >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: upstream
+          path: upstream.json
+  build:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    env:
+      REGISTRY_IMAGE: ${{ needs.plan.outputs.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        if: github.event_name != 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/${{ matrix.arch }}
+          load: true
+          pull: true
+          tags: ${{ env.REGISTRY_IMAGE }}:${{ needs.plan.outputs.release_tag }}-${{ matrix.arch }}
+          build-args: |
+            AWG_GO_TAG=${{ needs.plan.outputs.go_tag }}
+            AWG_GO_COMMIT=${{ needs.plan.outputs.go_commit }}
+            AWG_TOOLS_TAG=${{ needs.plan.outputs.tools_tag }}
+            AWG_TOOLS_COMMIT=${{ needs.plan.outputs.tools_commit }}
+            SOURCE_URL=https://github.com/${{ github.repository }}
+            SOURCE_REVISION=${{ github.sha }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      - name: AWG-to-AWG integration test
+        env:
+          CANDIDATE: ${{ env.REGISTRY_IMAGE }}:${{ needs.plan.outputs.release_tag }}-${{ matrix.arch }}
+        run: |
+          docker run --rm --entrypoint sh "$CANDIDATE" -ec '
+            test -s /usr/src/awg-docker/amneziawg-go.tar.gz
+            test -s /usr/src/awg-docker/amneziawg-tools.tar.gz
+            test -s /usr/src/awg-docker/alpine-sources.tar.gz
+            cmp /usr/bin/awg-quick /usr/src/awg-docker/modified/awg-quick
+          '
+          sudo modprobe tun
+          for mode in basic advanced; do
+            SMOKE_MODE="$mode" timeout 240 bash scripts/smoke.sh "$CANDIDATE"
+          done
+      - name: Publish tested architecture
+        if: needs.plan.outputs.publish == 'true'
+        env:
+          CANDIDATE: ${{ env.REGISTRY_IMAGE }}:${{ needs.plan.outputs.release_tag }}-${{ matrix.arch }}
+        run: timeout 300 docker push "$CANDIDATE"
+  publish:
+    needs: [plan, build]
+    if: needs.plan.outputs.publish == 'true'
+    env:
+      REGISTRY_IMAGE: ${{ needs.plan.outputs.image }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          RELEASE: ${{ needs.plan.outputs.release_tag }}
+          INPUT_KEY: ${{ needs.plan.outputs.key }}
+        run: |
+          docker buildx imagetools create \
+            --tag "$REGISTRY_IMAGE:$RELEASE" \
+            --tag "$REGISTRY_IMAGE:$INPUT_KEY" \
+            --tag "$REGISTRY_IMAGE:latest" \
+            "$REGISTRY_IMAGE:$RELEASE-amd64" "$REGISTRY_IMAGE:$RELEASE-arm64"
+          docker buildx imagetools inspect "$REGISTRY_IMAGE:$RELEASE" | tee -a "$GITHUB_STEP_SUMMARY"

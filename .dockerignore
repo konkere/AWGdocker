@@ -1,0 +1,13 @@
+**
+!Dockerfile
+!entrypoint.sh
+!LICENSE
+!LICENSES/
+!LICENSES/**
+!THIRD_PARTY.md
+!scripts/
+scripts/**
+!scripts/quick-userspace.bash
+!scripts/bundle-alpine-sources.py
+!scripts/build-local.sh
+!scripts/resolve-upstream.py

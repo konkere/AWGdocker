@@ -1,0 +1,20 @@
+services:
+  awg:
+    image: ${AWG_IMAGE:?Set AWG_IMAGE in .env}
+    container_name: awg-client
+    cap_add: [NET_ADMIN]
+    devices: [/dev/net/tun:/dev/net/tun]
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: "1"
+      net.ipv6.conf.all.disable_ipv6: "1"
+    volumes:
+      - type: bind
+        source: ./awg0.conf
+        target: /etc/amnezia/amneziawg/awg0.conf
+        read_only: true
+        bind:
+          create_host_path: false
+    stop_grace_period: 30s
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+    restart: unless-stopped
