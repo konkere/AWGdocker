@@ -49,12 +49,13 @@ def collect(database, destination):
         run("git", "init", "--quiet", str(repo))
         run("git", "-C", str(repo), "remote", "add", "origin",
             "https://github.com/alpinelinux/aports.git")
-        fetched = set()
+        # Fetch the exact commits together. Repeated shallow fetches can race
+        # with Git's background maintenance updating the shallow boundary.
+        commits = sorted({p["aports_commit"] for p in inventory})
+        run("git", "-C", str(repo), "-c", "gc.auto=0", "-c", "maintenance.auto=false",
+            "fetch", "--depth=1", "origin", *commits)
         for origin, commit in sorted({(p["origin"], p["aports_commit"])
                                        for p in inventory}):
-            if commit not in fetched:
-                run("git", "-C", str(repo), "fetch", "--depth=1", "origin", commit)
-                fetched.add(commit)
             port = None
             for section in ("main", "community", "testing"):
                 candidate = f"{section}/{origin}"
