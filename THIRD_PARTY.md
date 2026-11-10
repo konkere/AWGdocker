@@ -18,6 +18,10 @@ Official upstream projects:
 - <https://github.com/amnezia-vpn/amneziawg-tools>
 - <https://gitlab.alpinelinux.org/alpine/aports>
 
+The collector fetches those same aports commits from Alpine's official GitHub
+mirror, <https://github.com/alpinelinux/aports>, since the GitLab frontend can
+reject unattended runner requests. The installed package commit remains authoritative.
+
 The tools GPL text is included at `LICENSES/GPL-2.0-only.txt`. The installed
 `awg-quick` remains GPL-covered as a whole, including our inserted override and
 sysctl modification. Our changes force the userspace implementation and avoid

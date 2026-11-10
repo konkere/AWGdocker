@@ -48,7 +48,7 @@ def collect(database, destination):
         repo = Path(temp) / "aports"
         run("git", "init", "--quiet", str(repo))
         run("git", "-C", str(repo), "remote", "add", "origin",
-            "https://gitlab.alpinelinux.org/alpine/aports.git")
+            "https://github.com/alpinelinux/aports.git")
         fetched = set()
         for origin, commit in sorted({(p["origin"], p["aports_commit"])
                                        for p in inventory}):
