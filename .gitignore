@@ -4,5 +4,6 @@ private-configs/
 backup-*/
 upstream.json
 __pycache__/
+image-provenance/
 *.tar
 *.tar.gz

@@ -70,8 +70,8 @@ To build where the Docker bridge cannot access the network:
     BUILD_NETWORK=host bash scripts/build-local.sh
 
 Use `IMAGE=amneziawg:candidate bash scripts/build-local.sh` for a different local tag.
-Builds also fetch and bundle the corresponding sources for distributed software;
-allow extra time, disk space and network access to Alpine's source servers.
+Builds bundle AmneziaWG sources and generate Alpine runtime package provenance
+from exact aports recipes; allow network access to the upstream repositories.
 
 The Dockerfile accepts AWG_GO_COMMIT and AWG_TOOLS_COMMIT, not permanent version
 defaults. upstream.json and OCI labels record the resolved versions.
@@ -192,6 +192,9 @@ GPL-2.0-only function fragment inserted into `awg-quick`. `amneziawg-go` uses MI
 `amneziawg-tools` and the modified `awg-quick` retain GPLv2. The entire image is
 not licensed as MIT. Other bundled packages retain their individual licenses.
 
-Every image includes corresponding source archives, the complete modified
-`awg-quick`, build scripts, component commits and license notices. See
+Every image includes AmneziaWG source archives, the complete modified
+`awg-quick`, build scripts, component commits and license notices. Alpine source
+archives are excluded; a full per-build package table with versions, licenses and
+exact source URLs is generated into the image's `build/THIRD_PARTY.md`. Links to
+third-party sources do not necessarily satisfy GPLv2. See
 [THIRD_PARTY.md](THIRD_PARTY.md) for the scope and extraction commands.

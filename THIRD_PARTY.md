@@ -18,11 +18,14 @@ Official upstream projects:
 - <https://github.com/amnezia-vpn/amneziawg-tools>
 - <https://gitlab.alpinelinux.org/alpine/aports>
 
-The collector fetches those same aports commits from Alpine's official GitHub
-mirror, <https://github.com/alpinelinux/aports>, since the GitLab frontend can
-reject unattended runner requests. The installed package commit remains authoritative.
-Distfiles are fetched first from Alpine's official per-release source cache, then
-from the recipe's original URL if necessary; the original checksums are verified.
+The inventory generator reads every package in the runtime APK database before
+installing build-only tools. It retrieves exact aports recipes from Alpine's
+official GitHub mirror, <https://github.com/alpinelinux/aports>. The installed
+package commit remains authoritative. Upstream URLs and license expressions
+come from APK metadata; source URLs are expanded from that commit's APKBUILD.
+Local sources and patches link to files at the same commit. The generator fails
+on missing metadata, missing recipes or a recipe/package version mismatch.
+It does not download or verify source distfiles, and does not guess missing data.
 
 The tools GPL text is included at `LICENSES/GPL-2.0-only.txt`. The installed
 `awg-quick` remains GPL-covered as a whole, including our inserted override and
@@ -43,15 +46,19 @@ modified script includes a change notice and date.
 - `modified/awg-quick`: the full modified Bash source, identical to the installed script.
 - `build/`: the Dockerfile and wrapper sources used to build and install it.
 - `versions.txt`: the component tags/commits and AWGdocker source revision.
-- `alpine-sources.tar.gz`: the runtime package inventory, exact aports recipes and
-  patches, and checksum-verified source distfiles for each package origin. Build-only
-  packages used to collect these sources are not part of that runtime inventory.
+- `alpine/packages.json`: all actually installed Alpine runtime packages, including
+  transitive dependencies, with versions, licenses, upstream URLs, exact aports
+  commits, recipe URLs and all recipe source/patch URLs.
+- `alpine/installed`: the original runtime APK database used for that inventory.
+- `alpine/THIRD_PARTY.md` and `build/THIRD_PARTY.md`: this document with the full
+  generated package table for this build and architecture.
 
-The image build fails if a runtime package lacks an aports commit, its original
-recipe cannot be found, or its source cannot be fetched and verified. These archives
-are distributed inside the same image as the binaries, rather than relying on a
-temporary Actions artifact or an upstream link remaining available. Source bundles
-increase build time and image size.
+The AmneziaWG archives remain inside the image. Alpine source archives are not
+collected or included. Existing upstream license/copyright notices and the GPL
+text are retained. The inventory identifies the AWGdocker source revision, Alpine
+release, APK architectures and SHA-256 of the exact runtime database. CI checks
+it against the built image and exports the generated document, inventory and
+image identity as an artifact for each architecture; artifacts have finite retention.
 
 You can extract sources without starting a tunnel or granting privileges:
 
@@ -62,12 +69,17 @@ timeout 120 docker cp "$container:/usr/src/awg-docker" ./image-sources
 timeout 10 docker rm "$container"
 ```
 
-The exact runtime package versions and aports commits are in
-`alpine-sources/packages.json` after unpacking `alpine-sources.tar.gz`. To rebuild
-one Alpine package, use its bundled APKBUILD and patches with Alpine's `abuild`,
-setting `SRCDEST` to that recipe's bundled `distfiles` directory. Kernel/compiler
-toolchains are normal external build prerequisites. Sources and licenses for Go
-modules are retained within the Go archive's `vendor` directory.
+Sources and licenses for Go modules remain in the Go archive's `vendor` directory.
+The repository copy of this document is a template, not a claim about a moving
+Alpine tag. The complete table is generated into each image at build time, so
+amd64 and arm64 builds can accurately document different package sets. Extract
+`image-sources/build/THIRD_PARTY.md` using the command above to read that table.
+
+## Alpine runtime packages (generated per image)
+
+<!-- BEGIN ALPINE RUNTIME INVENTORY -->
+Build an image to populate this section from its actual runtime APK database.
+<!-- END ALPINE RUNTIME INVENTORY -->
 
 ## Redistribution
 
@@ -76,3 +88,16 @@ notices with redistributed images. If you publish a different binary, regenerate
 the matching source bundles. Do not describe the whole image as MIT-only.
 The independently executable programs are packaged together; the wrapper's MIT
 license does not override the GPL or any other bundled license.
+
+### Legal caveat for Alpine source links
+
+Links to third-party upstream sources do **not necessarily satisfy GPLv2**.
+GPLv2 section 3 requires a permitted corresponding-source distribution method;
+a package inventory or a link to somebody else's server is not, by itself, a
+guarantee of compliance or a written source offer. Distributors remain responsible
+for complete matching sources, including applicable patches and build scripts,
+and their availability under the relevant license. Removing Alpine source
+archives is a packaging decision, not a legal compliance certification. Before
+redistributing, arrange a source-provision method appropriate to the licenses
+and distribution circumstances. See [GPLv2 section 3](https://www.gnu.org/licenses/old-licenses/gpl-2.0.html#section3)
+and the [GNU GPL FAQ](https://www.gnu.org/licenses/old-licenses/gpl-2.0-faq.html#SourceAndBinaryOnDifferentSites).

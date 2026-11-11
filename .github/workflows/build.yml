@@ -128,16 +128,46 @@ jobs:
             SOURCE_REVISION=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
-      - name: AWG-to-AWG integration test
+      - name: Verify sources, notices and runtime inventory
         env:
           CANDIDATE: ${{ env.REGISTRY_IMAGE }}:${{ needs.plan.outputs.release_tag }}-${{ matrix.arch }}
         run: |
           docker run --rm --entrypoint sh "$CANDIDATE" -ec '
             test -s /usr/src/awg-docker/amneziawg-go.tar.gz
             test -s /usr/src/awg-docker/amneziawg-tools.tar.gz
-            test -s /usr/src/awg-docker/alpine-sources.tar.gz
+            test ! -e /usr/src/awg-docker/alpine-sources.tar.gz
+            test -s /usr/share/licenses/awg-docker/GPL-2.0-only.txt
+            test -s /usr/share/licenses/awg-docker/MIT.txt
+            test -n "$(ls -A /usr/share/licenses/amneziawg/go)"
+            test -n "$(ls -A /usr/share/licenses/amneziawg/tools)"
+            grep -q "SPDX-License-Identifier: GPL-2.0" /usr/bin/awg-quick
+            grep -q "Copyright (C)" /usr/bin/awg-quick
+            grep -q "Modified by AWGdocker on" /usr/bin/awg-quick
             cmp /usr/bin/awg-quick /usr/src/awg-docker/modified/awg-quick
           '
+          mkdir -p image-provenance
+          container=$(docker create "$CANDIDATE")
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/usr/src/awg-docker/alpine/." image-provenance/
+          docker cp "$container:/lib/apk/db/installed" image-provenance/runtime-installed
+          docker cp "$container:/etc/alpine-release" image-provenance/alpine-release
+          docker cp "$container:/usr/src/awg-docker/versions.txt" image-provenance/versions.txt
+          docker cp "$container:/usr/src/awg-docker/build/THIRD_PARTY.md" image-provenance/build-THIRD_PARTY.md
+          docker cp "$container:/usr/share/licenses/awg-docker/GPL-2.0-only.txt" image-provenance/GPL-2.0-only.txt
+          cmp LICENSES/GPL-2.0-only.txt image-provenance/GPL-2.0-only.txt
+          cmp image-provenance/THIRD_PARTY.md image-provenance/build-THIRD_PARTY.md
+          python3 scripts/alpine-inventory.py image-provenance/runtime-installed image-provenance THIRD_PARTY.md \
+            --verify --revision "$GITHUB_SHA" --release "$(cat image-provenance/alpine-release)"
+          docker image inspect "$CANDIDATE" > image-provenance/image-inspect.json
+          cat image-provenance/THIRD_PARTY.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: runtime-provenance-${{ matrix.arch }}
+          path: image-provenance/
+      - name: AWG-to-AWG integration test
+        env:
+          CANDIDATE: ${{ env.REGISTRY_IMAGE }}:${{ needs.plan.outputs.release_tag }}-${{ matrix.arch }}
+        run: |
           sudo modprobe tun
           for mode in basic advanced; do
             SMOKE_MODE="$mode" timeout 240 bash scripts/smoke.sh "$CANDIDATE"

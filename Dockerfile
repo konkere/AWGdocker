@@ -2,15 +2,14 @@
 FROM alpine:3 AS runtime
 RUN apk add --no-cache bash iproute2 iptables ip6tables ca-certificates
 
-# Keep the complete sources alongside the distributed runtime packages.
-FROM runtime AS alpine-sources
+FROM runtime AS alpine-inventory
+ARG SOURCE_REVISION
 RUN cp /lib/apk/db/installed /tmp/runtime-installed \
- && apk add --no-cache python3 git abuild
-COPY scripts/bundle-alpine-sources.py /tmp/bundle-alpine-sources.py
-RUN DISTFILES_MIRROR="https://distfiles.alpinelinux.org/distfiles/v$(cut -d. -f1,2 /etc/alpine-release)" \
-      python3 /tmp/bundle-alpine-sources.py /tmp/runtime-installed /tmp/alpine-sources \
- && mkdir -p /out \
- && tar -czf /out/alpine-sources.tar.gz -C /tmp alpine-sources
+ && apk add --no-cache python3 git
+COPY scripts/alpine-inventory.py /tmp/alpine-inventory.py
+COPY THIRD_PARTY.md /tmp/THIRD_PARTY.md
+RUN python3 /tmp/alpine-inventory.py /tmp/runtime-installed /out/alpine /tmp/THIRD_PARTY.md \
+      --revision "$SOURCE_REVISION" --release "$(cat /etc/alpine-release)"
 
 FROM golang:alpine AS build
 ARG AWG_GO_COMMIT
@@ -60,9 +59,10 @@ COPY --from=build /out/amneziawg-go /usr/bin/
 COPY --from=build /out/usr/bin/awg /out/usr/bin/awg-quick /usr/bin/
 COPY --from=build /out/licenses /usr/share/licenses/amneziawg
 COPY --from=build /out/sources /usr/src/awg-docker/
-COPY --from=alpine-sources /out/alpine-sources.tar.gz /usr/src/awg-docker/
+COPY --from=alpine-inventory /out/alpine /usr/src/awg-docker/alpine/
 COPY Dockerfile entrypoint.sh THIRD_PARTY.md /usr/src/awg-docker/build/
-COPY scripts/quick-userspace.bash scripts/build-local.sh scripts/resolve-upstream.py scripts/bundle-alpine-sources.py /usr/src/awg-docker/build/scripts/
+COPY --from=alpine-inventory /out/alpine/THIRD_PARTY.md /usr/src/awg-docker/build/THIRD_PARTY.md
+COPY scripts/quick-userspace.bash scripts/build-local.sh scripts/resolve-upstream.py scripts/alpine-inventory.py /usr/src/awg-docker/build/scripts/
 COPY LICENSES/ /usr/share/licenses/awg-docker/
 COPY LICENSE /usr/share/licenses/awg-docker/MIT.txt
 # Do not rewrite a sysctl already set by Compose in read-only /proc/sys.

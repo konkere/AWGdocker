@@ -8,6 +8,6 @@
 !scripts/
 scripts/**
 !scripts/quick-userspace.bash
-!scripts/bundle-alpine-sources.py
+!scripts/alpine-inventory.py
 !scripts/build-local.sh
 !scripts/resolve-upstream.py
