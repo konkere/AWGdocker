@@ -96,12 +96,16 @@ exit "${AWG_TEST_PROBE_EXIT:-0}"
     def start(self):
         proc = subprocess.Popen(["bash", str(ROOT / "entrypoint.sh")], env=self.env,
                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        self.addCleanup(lambda: proc.kill() if proc.poll() is None else None)
+        def stop():
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=3)
+        self.addCleanup(stop)
         return proc
 
-    def wait_ready(self, proc):
+    def wait_ready(self, proc, marker="ready"):
         for _ in range(100):
-            if (self.path / "ready").exists():
+            if (self.path / marker).exists():
                 return
             if proc.poll() is not None:
                 self.fail("Entrypoint exited before ready")
@@ -126,6 +130,20 @@ exit "${AWG_TEST_PROBE_EXIT:-0}"
         self.wait_ready(proc)
         proc.send_signal(signal.SIGTERM)
         self.assertEqual(proc.wait(timeout=3), 1)
+
+    def test_term_does_not_wait_for_unresponsive_timer(self):
+        # Model a timer that cannot act on TERM during child startup.
+        self.script("sleep", r'''
+trap '' TERM
+touch "$AWG_TEST_DIR/sleep-ready"
+exec /bin/sleep "$@"
+''')
+        proc = self.start()
+        self.wait_ready(proc, "sleep-ready")
+        proc.send_signal(signal.SIGTERM)
+        self.assertEqual(proc.wait(timeout=3), 0)
+        self.assertEqual(self.calls(), ["up before", "down before"])
+        self.assertEqual(list(self.path.glob("tmp*")), [])
 
     def test_daemon_loss_is_not_success(self):
         self.env["AWG_TEST_PROBE_EXIT"] = "1"

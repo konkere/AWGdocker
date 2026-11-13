@@ -9,7 +9,9 @@ cleanup() {
     local status=$?
     trap - EXIT TERM INT
     if [[ -n $sleeper ]]; then
-        kill "$sleeper" 2>/dev/null || true
+        # This child is only a timer. TERM can race with Bash's child setup;
+        # KILL guarantees that cleanup never waits for the full sleep interval.
+        kill -KILL "$sleeper" 2>/dev/null || true
         wait "$sleeper" 2>/dev/null || true
     fi
     if (( started )); then
